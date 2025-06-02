@@ -1,1 +1,8 @@
-{}
+{
+  "import": [
+    {
+      "path": "tiye/cirru-parser/lib",
+      "alias": "cirru"
+    }
+  ]
+}
