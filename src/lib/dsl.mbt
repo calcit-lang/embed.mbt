@@ -79,6 +79,111 @@ pub fn interpret_expr(
         [Leaf("quote"), expr] => CalcitValue::Quote(expr)
         [Leaf("quote"), ..] =>
           raise CalcitEvalError("Quote must have one argument")
+
+        // math
+        [Leaf("+"), .. xs] if xs.length() > 0 => {
+          let mut sum = 0.0
+          for x in xs {
+            let value = interpret_expr!(x, context)
+            if value is Number(n) {
+              sum += n
+            } else {
+              raise CalcitEvalError(
+                "Expected a number, got: " + value.to_string(),
+              )
+            }
+          }
+          CalcitValue::Number(sum)
+        }
+        [Leaf("+")] =>
+          raise CalcitEvalError("Plus must have at least one argument")
+        [Leaf("-"), .. xs] if xs.length() > 0 => {
+          let mut result = 0.0
+          if xs.length() == 1 {
+            let ret = interpret_expr!(xs[0], context)
+            if ret is Number(n) {
+              result = n
+            } else {
+              raise CalcitEvalError(
+                "Expected a number, got: " + ret.to_string(),
+              )
+            }
+          } else {
+            let ret = interpret_expr!(xs[0], context)
+            if ret is Number(n) {
+              result = n
+            } else {
+              raise CalcitEvalError(
+                "Expected a number, got: " + ret.to_string(),
+              )
+            }
+            for x in xs[1:] {
+              let value = interpret_expr!(x, context)
+              if value is Number(n) {
+                result -= n
+              } else {
+                raise CalcitEvalError(
+                  "Expected a number, got: " + value.to_string(),
+                )
+              }
+            }
+          }
+          CalcitValue::Number(result)
+        }
+        [Leaf("-"), ..] =>
+          raise CalcitEvalError("Minus must have at least one argument")
+        [Leaf("*"), .. xs] if xs.length() > 0 => {
+          let mut product = 1.0
+          for x in xs {
+            let value = interpret_expr!(x, context)
+            if value is Number(n) {
+              product *= n
+            } else {
+              raise CalcitEvalError(
+                "Expected a number, got: " + value.to_string(),
+              )
+            }
+          }
+          CalcitValue::Number(product)
+        }
+        [Leaf("*")] =>
+          raise CalcitEvalError("Multiply must have at least one argument")
+        [Leaf("/"), .. xs] if xs.length() > 0 => {
+          let mut result = 1.0
+          if xs.length() == 1 {
+            let ret = interpret_expr!(xs[0], context)
+            if ret is Number(n) {
+              result = n
+            } else {
+              raise CalcitEvalError(
+                "Expected a number, got: " + ret.to_string(),
+              )
+            }
+          } else {
+            let ret = interpret_expr!(xs[0], context)
+            if ret is Number(n) {
+              result = n
+            } else {
+              raise CalcitEvalError(
+                "Expected a number, got: " + ret.to_string(),
+              )
+            }
+            for x in xs[1:] {
+              let value = interpret_expr!(x, context)
+              if value is Number(n) {
+                if n == 0.0 {
+                  raise CalcitEvalError("Division by zero")
+                }
+                result /= n
+              } else {
+                raise CalcitEvalError(
+                  "Expected a number, got: " + value.to_string(),
+                )
+              }
+            }
+          }
+          CalcitValue::Number(result)
+        }
         // function
         [Leaf("fn"), Leaf(name), List(args), .. body] => {
           let arg_names : Array[String] = []
