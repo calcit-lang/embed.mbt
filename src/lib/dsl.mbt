@@ -1,12 +1,15 @@
 ///|
+typealias @cirru.Cirru
+
+///|
 enum CalcitValue {
   Nil
   Number(Double)
   String(String)
   Boolean(Bool)
   Json(Json)
-  Function(String?, Array[String], Array[@cirru.Cirru])
-  Quote(@cirru.Cirru)
+  Function(String?, Array[String], Array[Cirru])
+  Quote(Cirru)
 } derive(ToJson, @json.FromJson, Eq, Show)
 
 ///|
@@ -18,7 +21,7 @@ pub fn interpret_cirru(
   context? : Map[String, CalcitValue]
 ) -> CalcitValue!CalcitEvalError {
   let context = context.or({})
-  let tree = match @cirru.parse?(code) {
+  let tree = match Cirru::parse?(code) {
     Err(err) => raise CalcitEvalError("Cirru parse error: \{err.to_string()}")
     Ok(tree) => tree
   }
@@ -31,7 +34,7 @@ pub fn interpret_cirru(
 
 ///|
 pub fn interpret_expr(
-  line : @cirru.Cirru,
+  line : Cirru,
   context : Map[String, CalcitValue]
 ) -> CalcitValue!CalcitEvalError {
   match line {

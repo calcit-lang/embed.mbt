@@ -2,7 +2,7 @@
   "name": "tiye/calcit-embed",
   "version": "0.1.0",
   "deps": {
-    "tiye/cirru-parser": "0.0.13"
+    "tiye/cirru-parser": "0.1.0"
   },
   "readme": "README.md",
   "repository": "",
