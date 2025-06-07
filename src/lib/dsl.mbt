@@ -83,6 +83,171 @@ pub fn interpret_expr(
         [Leaf("quote"), ..] =>
           raise CalcitEvalError("Quote must have one argument")
 
+        // list & map operations
+        [Leaf("list"), ..items] => {
+          let mut values : Array[CalcitValue] = []
+          for item in items {
+            values.push(interpret_expr!(item, context))
+          }
+          CalcitValue::List(values)
+        }
+        [Leaf("map"), ..items] if items.length() % 2 == 0 => {
+          let mut map_values : Map[String, CalcitValue] = {}
+          for i = 0; i < items.length(); i = i + 2 {
+            let key_item = items[i]
+            let value_item = items[i+1]
+            match key_item {
+              Leaf(s) => {
+                map_values.set(s, interpret_expr!(value_item, context))
+              }
+              _ => raise CalcitEvalError("Map keys must be strings")
+            }
+          }
+          CalcitValue::Map(map_values)
+        }
+        [Leaf("map"), ..] => raise CalcitEvalError("Map requires an even number of arguments for key-value pairs")
+        [Leaf("get"), target, key_or_index] => {
+          let target_value = interpret_expr!(target, context)
+          match target_value {
+            List(l) => {
+              let index_value = interpret_expr!(key_or_index, context)
+              match index_value {
+                Number(n) => {
+                  let idx = n.to_int()
+                  if idx >= 0 && idx < l.length() {
+                    l[idx]
+                  } else {
+                    CalcitValue::Nil // Or raise error: "Index out of bounds"
+                  }
+                }
+                _ => raise CalcitEvalError("List index must be a number")
+              }
+            }
+            Map(m) => {
+              match key_or_index {
+                Leaf(key_str) => m.get(key_str).or(CalcitValue::Nil)
+                String(key_str) => m.get(key_str).or(CalcitValue::Nil) // if keys are interpreted as CalcitValue::String
+                _ => raise CalcitEvalError("Map key must be a leaf string or a string value")
+              }
+            }
+            _ => raise CalcitEvalError("Get operation target must be a list or map: " + target_value.to_string())
+          }
+        }
+        [Leaf("assoc"), target, key_or_index, value_to_assoc] => {
+          let target_value = interpret_expr!(target, context)
+          let val = interpret_expr!(value_to_assoc, context)
+          match target_value {
+            List(l) => {
+              let index_value = interpret_expr!(key_or_index, context)
+              match index_value {
+                Number(n) => {
+                  let idx = n.to_int()
+                  if idx >= 0 && idx < l.length() {
+                    let mut new_l = l.copy()
+                    new_l[idx] = val
+                    CalcitValue::List(new_l)
+                  } else {
+                    raise CalcitEvalError("Assoc: Index out of bounds")
+                  }
+                }
+                _ => raise CalcitEvalError("Assoc: List index must be a number")
+              }
+            }
+            Map(m) => {
+              match key_or_index {
+                Leaf(key_str) => {
+                  let mut new_m = m.copy()
+                  new_m.set(key_str, val)
+                  CalcitValue::Map(new_m)
+                }
+                // String(key_str) => { ... } // if keys are interpreted as CalcitValue::String
+                _ => raise CalcitEvalError("Assoc: Map key must be a leaf string")
+              }
+            }
+            _ => raise CalcitEvalError("Assoc operation target must be a list or map: " + target_value.to_string())
+          }
+        }
+        [Leaf("count"), target] => {
+          let target_value = interpret_expr!(target, context)
+          match target_value {
+            List(l) => CalcitValue::Number(l.length().to_double())
+            Map(m) => CalcitValue::Number(m.size().to_double())
+            _ => raise CalcitEvalError("Count operation target must be a list or map: " + target_value.to_string())
+          }
+        }
+        [Leaf("conj"), target, ..items_to_add] => {
+          let target_value = interpret_expr!(target, context)
+          match target_value {
+            List(l) => {
+              let mut new_l = l.copy()
+              for item in items_to_add {
+                new_l.push(interpret_expr!(item, context))
+              }
+              CalcitValue::List(new_l)
+            }
+            Map(m) => {
+              if items_to_add.length() % 2 != 0 {
+                raise CalcitEvalError("Conj on map requires an even number of items for key-value pairs")
+              }
+              let mut new_m = m.copy()
+              for i = 0; i < items_to_add.length(); i = i + 2 {
+                let key_item = items_to_add[i]
+                let value_item = items_to_add[i+1]
+                match key_item {
+                  Leaf(s) => {
+                    new_m.set(s, interpret_expr!(value_item, context))
+                  }
+                  _ => raise CalcitEvalError("Conj: Map keys must be strings")
+                }
+              }
+              CalcitValue::Map(new_m)
+            }
+            _ => raise CalcitEvalError("Conj operation target must be a list or map: " + target_value.to_string())
+          }
+        }
+        [Leaf("dissoc"), target, key_to_dissoc] => {
+          let target_value = interpret_expr!(target, context)
+          match target_value {
+            Map(m) => {
+              match key_to_dissoc {
+                Leaf(key_str) => {
+                  let mut new_m = m.copy()
+                  new_m.remove(key_str)
+                  CalcitValue::Map(new_m)
+                }
+                _ => raise CalcitEvalError("Dissoc: Map key must be a leaf string")
+              }
+            }
+            _ => raise CalcitEvalError("Dissoc operation target must be a map: " + target_value.to_string())
+          }
+        }
+        [Leaf("first"), target] => {
+          let target_value = interpret_expr!(target, context)
+          match target_value {
+            List(l) => {
+              if l.length() > 0 {
+                l[0]
+              } else {
+                CalcitValue::Nil
+              }
+            }
+            _ => raise CalcitEvalError("First operation target must be a list: " + target_value.to_string())
+          }
+        }
+        [Leaf("rest"), target] => {
+          let target_value = interpret_expr!(target, context)
+          match target_value {
+            List(l) => {
+              if l.length() > 1 {
+                CalcitValue::List(l[1..].to_array())
+              } else {
+                CalcitValue::List([])
+              }
+            }
+            _ => raise CalcitEvalError("Rest operation target must be a list: " + target_value.to_string())
+          }
+        }
+
         // math
         [Leaf("+"), .. xs] if xs.length() > 0 => {
           let mut sum = 0.0
