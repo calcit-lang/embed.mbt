@@ -2,32 +2,32 @@
 typealias @cirru.Cirru
 
 ///|
-enum CalcitValue {
+pub(all) enum CalcitValue {
   Nil
   Number(Double)
   String(String)
-  Boolean(Bool)
+  Bool(Bool)
   Json(Json)
   Function(String?, Array[String], Array[Cirru])
   Quote(Cirru)
 } derive(ToJson, @json.FromJson, Eq, Show)
 
 ///|
-type! CalcitEvalError String
+suberror CalcitEvalError String
 
 ///| interpret_cirru parses Cirru code and returns a CalcitValue.
 pub fn interpret_cirru(
   code : String,
   context? : Map[String, CalcitValue]
-) -> CalcitValue!CalcitEvalError {
+) -> CalcitValue raise CalcitEvalError {
   let context = context.or({})
-  let tree = match Cirru::parse?(code) {
+  let tree = match (try? Cirru::parse(code)) {
     Err(err) => raise CalcitEvalError("Cirru parse error: \{err.to_string()}")
     Ok(tree) => tree
   }
   let mut ret = CalcitValue::Nil
   for line in tree {
-    ret = interpret_expr!(line, context)
+    ret = interpret_expr(line, context)
   }
   ret
 }
@@ -36,18 +36,29 @@ pub fn interpret_cirru(
 pub fn interpret_expr(
   line : Cirru,
   context : Map[String, CalcitValue]
-) -> CalcitValue!CalcitEvalError {
+) -> CalcitValue raise CalcitEvalError {
   match line {
     List(xs) =>
       match xs {
+        // do
+        [Leaf("do"), body] => interpret_expr(body, context)
+        [Leaf("do")] =>
+          raise CalcitEvalError("Do must have at least one expression")
+        [Leaf("do"), .. body] => {
+          let mut result = CalcitValue::Nil
+          for expr in body {
+            result = interpret_expr(expr, context)
+          }
+          result
+        }
         // if
         [Leaf("if"), cond, then_branch, else_branch] => {
-          let cond_value = interpret_expr!(cond, context)
-          if cond_value is Boolean(b) {
+          let cond_value = interpret_expr(cond, context)
+          if cond_value is Bool(b) {
             if b {
-              interpret_expr!(then_branch, context)
+              interpret_expr(then_branch, context)
             } else {
-              interpret_expr!(else_branch, context)
+              interpret_expr(else_branch, context)
             }
           } else {
             raise CalcitEvalError(
@@ -56,10 +67,10 @@ pub fn interpret_expr(
           }
         }
         [Leaf("if"), cond, then_branch] => {
-          let cond_value = interpret_expr!(cond, context)
-          if cond_value is Boolean(b) {
+          let cond_value = interpret_expr(cond, context)
+          if cond_value is Bool(b) {
             if b {
-              interpret_expr!(then_branch, context)
+              interpret_expr(then_branch, context)
             } else {
               CalcitValue::Nil
             }
@@ -72,7 +83,7 @@ pub fn interpret_expr(
         [Leaf("if"), ..] => raise CalcitEvalError("If takes 1 or 2 arguments")
         // def
         [Leaf("def"), Leaf(name), value] => {
-          let value = interpret_expr!(value, context)
+          let value = interpret_expr(value, context)
           context.set(name, value)
           value
         }
@@ -87,7 +98,7 @@ pub fn interpret_expr(
         [Leaf("+"), .. xs] if xs.length() > 0 => {
           let mut sum = 0.0
           for x in xs {
-            let value = interpret_expr!(x, context)
+            let value = interpret_expr(x, context)
             if value is Number(n) {
               sum += n
             } else {
@@ -103,7 +114,7 @@ pub fn interpret_expr(
         [Leaf("-"), .. xs] if xs.length() > 0 => {
           let mut result = 0.0
           if xs.length() == 1 {
-            let ret = interpret_expr!(xs[0], context)
+            let ret = interpret_expr(xs[0], context)
             if ret is Number(n) {
               result = n
             } else {
@@ -112,7 +123,7 @@ pub fn interpret_expr(
               )
             }
           } else {
-            let ret = interpret_expr!(xs[0], context)
+            let ret = interpret_expr(xs[0], context)
             if ret is Number(n) {
               result = n
             } else {
@@ -121,7 +132,7 @@ pub fn interpret_expr(
               )
             }
             for x in xs[1:] {
-              let value = interpret_expr!(x, context)
+              let value = interpret_expr(x, context)
               if value is Number(n) {
                 result -= n
               } else {
@@ -138,7 +149,7 @@ pub fn interpret_expr(
         [Leaf("*"), .. xs] if xs.length() > 0 => {
           let mut product = 1.0
           for x in xs {
-            let value = interpret_expr!(x, context)
+            let value = interpret_expr(x, context)
             if value is Number(n) {
               product *= n
             } else {
@@ -154,7 +165,7 @@ pub fn interpret_expr(
         [Leaf("/"), .. xs] if xs.length() > 0 => {
           let mut result = 1.0
           if xs.length() == 1 {
-            let ret = interpret_expr!(xs[0], context)
+            let ret = interpret_expr(xs[0], context)
             if ret is Number(n) {
               result = n
             } else {
@@ -163,7 +174,7 @@ pub fn interpret_expr(
               )
             }
           } else {
-            let ret = interpret_expr!(xs[0], context)
+            let ret = interpret_expr(xs[0], context)
             if ret is Number(n) {
               result = n
             } else {
@@ -172,7 +183,7 @@ pub fn interpret_expr(
               )
             }
             for x in xs[1:] {
-              let value = interpret_expr!(x, context)
+              let value = interpret_expr(x, context)
               if value is Number(n) {
                 if n == 0.0 {
                   raise CalcitEvalError("Division by zero")
@@ -209,7 +220,7 @@ pub fn interpret_expr(
           CalcitValue::Function(None, arg_names, body.to_array())
         }
         [Leaf(f), .. xs] => {
-          let f_value = interpret_token!(f, context)
+          let f_value = interpret_token(f, context)
           if f_value is Function(name, args, body) {
             if xs.length() != args.length() {
               let f0 = name.or("\\")
@@ -222,11 +233,11 @@ pub fn interpret_expr(
               new_context.set(k, value)
             }
             for idx, value in args {
-              new_context.set(value, interpret_expr!(xs[idx], context))
+              new_context.set(value, interpret_expr(xs[idx], context))
             }
             let mut result = CalcitValue::Nil
             for expr in body {
-              result = interpret_expr!(expr, new_context)
+              result = interpret_expr(expr, new_context)
             }
             result
           } else {
@@ -236,7 +247,7 @@ pub fn interpret_expr(
         _ =>
           raise CalcitEvalError("Unsupported line format: " + line.to_string())
       }
-    Leaf(token) => interpret_token!(token.to_string(), context)
+    Leaf(token) => interpret_token(token.to_string(), context)
   }
 }
 
@@ -244,22 +255,22 @@ pub fn interpret_expr(
 fn interpret_token(
   token : String,
   context : Map[String, CalcitValue]
-) -> CalcitValue!CalcitEvalError {
+) -> CalcitValue raise CalcitEvalError {
   match token {
     "" => raise CalcitEvalError("Empty token encountered")
-    ['|', .. xs] => CalcitValue::String(xs.to_string())
-    "true" => CalcitValue::Boolean(true)
-    "false" => CalcitValue::Boolean(false)
-    "nil" => CalcitValue::Nil
+    ['|', .. xs] => String(xs.to_string())
+    "true" => Bool(true)
+    "false" => Bool(false)
+    "nil" => Nil
     x => {
       if context.get(x) is Some(value) {
         return value
       }
-      if @strconv.parse_int?(x) is Ok(i) {
-        return CalcitValue::Number(i.to_double())
+      if (try? @strconv.parse_int(x)) is Ok(i) {
+        return Number(i.to_double())
       }
-      if @strconv.parse_double?(x) is Ok(f) {
-        return CalcitValue::Number(f)
+      if (try? @strconv.parse_double(x)) is Ok(f) {
+        return Number(f)
       }
       raise CalcitEvalError("Unknown token: " + x)
     }
